@@ -162,9 +162,9 @@ class PoWSolver:
 
 # ── Tor rotation ─────────────────────────────────────────────────────
 
-def rotate_tor():
+def rotate_tor(cookie_path=None):
     try:
-        cp = "/root/.tor/control_auth_cookie"
+        cp = cookie_path or os.environ.get("TOR_COOKIE") or "/root/.tor/control_auth_cookie"
         if not os.path.exists(cp):
             return False
         with open(cp, "rb") as f:
@@ -612,20 +612,40 @@ TOOL: {"name":"write_file","args":{"path":"hello.txt","content":"Hello World!"}}
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="DeepSeek Vibe Agent — talk to chat.deepseek.com from CLI")
-    parser.add_argument("message", nargs="*", help="Message to send (non-interactive)")
-    parser.add_argument("--email", default="ambuguambuguambugu@gmail.com", help="DeepSeek account email")
-    parser.add_argument("--password", default="Test1234", help="DeepSeek account password")
+    parser = argparse.ArgumentParser(
+        description="DeepSeek Vibe Agent — unofficial CLI for chat.deepseek.com",
+        epilog="Credentials: set DEEPSEEK_EMAIL / DEEPSEEK_PASSWORD env vars, "
+               "or create config.json: {\"email\":\"x\",\"password\":\"y\"}"
+    )
+    parser.add_argument("message", nargs="*", help="Message to send (omit for interactive mode)")
+    parser.add_argument("--email", default=None, help="DeepSeek account email (or DEEPSEEK_EMAIL)")
+    parser.add_argument("--password", default=None, help="DeepSeek account password (or DEEPSEEK_PASSWORD)")
+    parser.add_argument("--config", default=None, help="Path to JSON config file with email/password")
     parser.add_argument("--model", default="deepseek-v3", help="Model name (deepseek-v3, deepseek-r1, etc.)")
     parser.add_argument("--tor", action="store_true", help="Use Tor proxy (socks5://127.0.0.1:9050)")
     parser.add_argument("--stream", action="store_true", help="Stream response token by token")
     parser.add_argument("--workspace", default="workspace", help="Working directory for file tools")
     args = parser.parse_args()
 
+    # Load credentials: CLI > config file > env vars
+    email = args.email or os.environ.get("DEEPSEEK_EMAIL")
+    password = args.password or os.environ.get("DEEPSEEK_PASSWORD")
+    if args.config and os.path.exists(args.config):
+        try:
+            with open(args.config) as f:
+                cfg = json.load(f)
+            email = email or cfg.get("email")
+            password = password or cfg.get("password")
+        except Exception:
+            print("  [Warning: could not read config file]", file=sys.stderr)
+    if not email or not password:
+        print("Error: email and password required. Use --email/--password, env vars DEEPSEEK_EMAIL/PASSWORD, or --config", file=sys.stderr)
+        sys.exit(1)
+
     proxies = {"http": "socks5://127.0.0.1:9050", "https": "socks5://127.0.0.1:9050"} if args.tor else {}
 
     print("  [Connecting to DeepSeek...]", file=sys.stderr)
-    client = DeepSeekClient(args.email, args.password, proxies=proxies, workspace=args.workspace)
+    client = DeepSeekClient(email, password, proxies=proxies, workspace=args.workspace)
 
     msg = " ".join(args.message) if args.message else None
 
